@@ -122,11 +122,334 @@ extern void softirq_init(void);
 char __initdata boot_command_line[COMMAND_LINE_SIZE];
 /* Untouched saved command line (eg. for /proc) */
 char *saved_command_line;
+char *bootimage_command_line;			//ASUS_BSP : Add for parse cmdline info to proc/bootinfo
 /* Command line for parameter parsing */
 static char *static_command_line;
 
 static char *execute_command;
 static char *ramdisk_execute_command;
+
+//+++ ASUS_BSP : Add for security by Deeo
+char SB_info[8]="SB : N";
+
+static int set_SB_info(char *str)
+{
+	strcpy(SB_info,"SB : ");
+	strcat(SB_info,str);
+	//printk("%s\n", SB_info);
+
+	return 0;
+}
+__setup("SB=", set_SB_info);
+//--- ASUS_BSP : Add for security by Deeo
+
+//+++ ASUS_BSP : Add for eMMC type by Deeo
+char emmc_info[32]={0};
+
+static int set_emmc_info(char *str)
+{
+	strcpy(emmc_info,"eMMC : ");
+	strcat(emmc_info,str);
+	//printk("%s\n", emmc_info);
+
+	return 0;
+}
+__setup("eMMC=", set_emmc_info);
+//--- ASUS_BSP : Add for eMMC type by Deeo
+
+//+++ ASUS_BSP : miniporting
+enum DEVICE_HWID g_A68_hwID=A68_UNKNOWN;
+char hwid_info[24]={0};
+
+EXPORT_SYMBOL(g_A68_hwID);
+
+static int set_hardware_id(char *str)
+{
+	strcpy(hwid_info,"HW ID : ");
+	if ( strcmp("A68_EVB", str) == 0 )
+	{
+		g_A68_hwID = A68_EVB;
+		strcat(hwid_info,str);
+		printk("Kernel HW ID = A68_EVB\n");
+	}
+	else if ( strcmp("A68_SR1_1", str) == 0 )
+	{
+		g_A68_hwID = A68_SR1_1;
+		strcat(hwid_info,str);
+		printk("Kernel HW ID = A68_SR1_1\n");
+	}
+	else if ( strcmp("A68_SR1_2", str) == 0 )
+	{
+		g_A68_hwID = A68_SR1_2;
+		strcat(hwid_info,str);
+		printk("Kernel HW ID = A68_SR1_2\n");
+	}
+	else if ( strcmp("A68_SR2", str) == 0 )
+	{
+		g_A68_hwID = A68_SR2;
+		strcat(hwid_info,str);
+		printk("Kernel HW ID = A68_SR2\n");
+	}
+	else if ( strcmp("A68_ER1", str) == 0 )
+	{
+		g_A68_hwID = A68_ER1;
+		strcat(hwid_info,str);
+		printk("Kernel HW ID = A68_ER1\n");
+	}
+	else if ( strcmp("A68_ER2", str) == 0 )
+	{
+		g_A68_hwID = A68_ER2;
+		strcat(hwid_info,str);
+		printk("Kernel HW ID = A68_ER2\n");
+	}	
+	else if ( strcmp("A68_ER3", str) == 0 )
+	{
+		g_A68_hwID = A68_ER3;
+		strcat(hwid_info,str);
+		printk("Kernel HW ID = A68_ER3\n");
+	}	
+	else if ( strcmp("A68_PR", str) == 0 )
+	{
+		g_A68_hwID = A68_PR;
+		strcat(hwid_info,str);
+		printk("Kernel HW ID = A68_PR\n");
+	}
+	else if ( strcmp("A68_PR2", str) == 0 )
+	{
+		g_A68_hwID = A68_PR2;
+		strcat(hwid_info,str);
+		printk("Kernel HW ID = A68_PR2\n");
+	}	
+	else if ( strcmp("A68_MP", str) == 0 )
+	{
+		g_A68_hwID = A68_MP;
+		strcat(hwid_info,str);
+		printk("Kernel HW ID = A68_MP\n");
+	}	
+	else if ( strcmp("A80_EVB", str) == 0 )
+	{
+		g_A68_hwID = A80_EVB;
+		strcat(hwid_info,str);
+		printk("Kernel HW ID = A80_EVB\n");
+	}
+	else if ( strcmp("A80_SR1", str) == 0 )
+	{
+		g_A68_hwID = A80_SR1;
+		strcat(hwid_info,str);
+		printk("Kernel HW ID = A80_SR1\n");
+	}
+	else if ( strcmp("A80_SR2", str) == 0 )
+	{
+		g_A68_hwID = A80_SR2;
+		strcat(hwid_info,str);
+		printk("Kernel HW ID = A80_SR2\n");
+	}
+	else if ( strcmp("A80_SR3", str) == 0 )
+	{
+		g_A68_hwID = A80_SR3;
+		strcat(hwid_info,str);
+		printk("Kernel HW ID = A80_SR3\n");
+	}
+	else if ( strcmp("A80_ER1", str) == 0 )
+	{
+		g_A68_hwID = A80_ER1;
+		strcat(hwid_info,str);
+		printk("Kernel HW ID = A80_ER1\n");
+	}	
+	else if ( strcmp("A80_ER2", str) == 0 )
+	{
+		g_A68_hwID = A80_ER2;
+		strcat(hwid_info,str);
+		printk("Kernel HW ID = A80_ER2\n");
+	}	
+	else if ( strcmp("A80_ER3", str) == 0 )
+	{
+		g_A68_hwID = A80_ER3;
+		strcat(hwid_info,str);
+		printk("Kernel HW ID = A80_ER3\n");
+	}
+	else if ( strcmp("A80_PR", str) == 0 )
+	{
+		g_A68_hwID = A80_PR;
+		strcat(hwid_info,str);
+		printk("Kernel HW ID = A80_PR\n");
+	}	
+	else
+	{
+		g_A68_hwID = A68_UNKNOWN;
+		strcat(hwid_info,"Unknow");
+		printk("Kernel HW ID = A68_UNKNOWN\n");
+	}
+	
+	//printk("g_A60K_hwID = %d\n", g_A60K_hwID);
+	//printk("%s\n", hwid_info);
+	return 0;
+}
+
+__setup("HW_ID=", set_hardware_id);
+
+//--- ASUS_BSP : miniporting
+
+//+++ ASUS_BSP : miniporting
+int  g_A68_cpuID=0;
+char cpurv_info[32]={0};
+
+EXPORT_SYMBOL(g_A68_cpuID);
+
+static int set_cpu_id(char *str)
+{
+	strcpy(cpurv_info,"CPU RV : ");
+	if ( memcmp("7160e1", (str+2) , 6) == 0 )
+	{
+		g_A68_cpuID = 716;
+		printk("CPUID = %d\n",g_A68_cpuID);
+		strcat(cpurv_info,str);
+	}
+	else if ( memcmp("7170e1", (str+2) , 6) == 0 )
+	{
+		g_A68_cpuID = 717;
+		printk("CPUID = %d\n",g_A68_cpuID);
+		strcat(cpurv_info,str);
+	}
+	else if ( memcmp("7180e1", (str+2) , 6) == 0 )
+	{
+		g_A68_cpuID = 718;
+		printk("CPUID = %d\n",g_A68_cpuID);
+		strcat(cpurv_info,str);
+	}
+	else if ( memcmp("7190e1", (str+2) , 6) == 0 )
+	{
+		g_A68_cpuID = 719;
+		printk("CPUID = %d\n",g_A68_cpuID);
+		strcat(cpurv_info,str);
+	}
+	else
+	{
+		g_A68_cpuID = -1;
+		printk("CPUID = UNKNOW!!\n");
+		strcat(cpurv_info,"Unknow");
+	}
+	//printk("g_A68_cpuID = %d \n",g_A68_cpuID);
+	//printk("%s \n",cpurv_info);
+	return 0;
+}
+
+__setup("CPU_RV=", set_cpu_id);
+
+//--- ASUS_BSP : miniporting
+
+//+++ ASUS_BSP : miniporting : Add for audio dbg mode
+int g_user_dbg_mode = 1;
+EXPORT_SYMBOL(g_user_dbg_mode);
+
+static int set_user_dbg_mode(char *str)
+{
+    if ( strcmp("y", str) == 0 )
+    {
+        g_user_dbg_mode = 1;
+    }
+    else
+    {
+        g_user_dbg_mode = 0;
+    }
+    g_user_dbg_mode = 1;
+    printk("Kernel dbg mode = %d\n", g_user_dbg_mode);
+    return 0;
+}
+__setup("dbg=", set_user_dbg_mode);
+//--- ASUS_BSP : miniporting : Add for audio dbg mode
+
+//+++ ASUS_BSP : Add for sbl info by Deeo
+char sbl_info[32]={0};
+
+static int set_sbl_info(char *str)
+{
+	strcpy(sbl_info,"SBL Ver. : ");
+	strcat(sbl_info,str);
+	//printk("%s\n", sbl_info);
+
+	return 0;
+}
+__setup("SBL_INFO=", set_sbl_info);
+//--- ASUS_BSP : Add for sbl info by Deeo
+
+//+++ ASUS_BSP : Add for rpm info by Deeo
+char rpm_info[32]={0};
+
+static int set_rpm_info(char *str)
+{
+	strcpy(rpm_info,"RPM Ver. : ");
+	strcat(rpm_info,str);
+	//printk("%s\n", rpm_info);
+
+	return 0;
+}
+__setup("RPM_INFO=", set_rpm_info);
+//--- ASUS_BSP : Add for rpm info by Deeo
+
+//+++ ASUS_BSP : Add for aboot info by Deeo
+char aboot_info[32]={0};
+
+static int set_aboot_info(char *str)
+{
+
+	unsigned long pte_efuse, pvs;
+	char ACPU[16]={0};
+
+	pte_efuse = readl_relaxed(0xfa7000c0);
+	pvs = (pte_efuse >> 10) & 0x7;
+	if (pvs == 0x7)
+		pvs = (pte_efuse >> 13) & 0x7;
+
+	//printk("pvs : %d\n",(int)pvs);
+	
+	switch (pvs) 
+	{
+		case 0x0:
+			strcpy(ACPU,"PVS : 0");
+		break;
+		case 0x7:
+			strcpy(ACPU,"PVS : 7");
+		break;
+		case 0x1:
+			strcpy(ACPU,"PVS : 1");
+		break;
+		case 0x3:
+			strcpy(ACPU,"PVS : 3");
+		break;
+		case 0x4:
+			strcpy(ACPU,"PVS : 4");
+		break;
+		default:
+			strcpy(ACPU,"PVS : Unknow");
+		break;
+	}
+
+	strcpy(aboot_info,"Aboot Ver. : ");
+	strcat(aboot_info,str);
+
+	strcpy(bootimage_command_line,sbl_info);
+	strcat(bootimage_command_line,"\n");
+	strcat(bootimage_command_line,rpm_info);
+	strcat(bootimage_command_line,"\n");
+	strcat(bootimage_command_line,aboot_info);
+	strcat(bootimage_command_line,"\n");
+	strcat(bootimage_command_line,cpurv_info);
+	strcat(bootimage_command_line,"\n");
+	strcat(bootimage_command_line,hwid_info);
+	strcat(bootimage_command_line,"\n");
+	strcat(bootimage_command_line,emmc_info);
+	strcat(bootimage_command_line,"\n");
+	strcat(bootimage_command_line,ACPU);
+	strcat(bootimage_command_line,"\n");
+	strcat(bootimage_command_line,SB_info);
+
+	printk("[BSP] %s\n", bootimage_command_line);
+
+	return 0;
+}
+__setup("ABOOT_INFO=", set_aboot_info);
+//--- ASUS_BSP : Add for aboot info by Deeo
 
 /*
  * If set, this is an indication to the drivers that reset the underlying
@@ -340,6 +663,7 @@ static inline void smp_prepare_cpus(unsigned int maxcpus) { }
 static void __init setup_command_line(char *command_line)
 {
 	saved_command_line = alloc_bootmem(strlen (boot_command_line)+1);
+	bootimage_command_line = alloc_bootmem( strlen (boot_command_line)+1 );
 	static_command_line = alloc_bootmem(strlen (command_line)+1);
 	strcpy (saved_command_line, boot_command_line);
 	strcpy (static_command_line, command_line);
@@ -359,6 +683,7 @@ static __initdata DECLARE_COMPLETION(kthreadd_done);
 static noinline void __init_refok rest_init(void)
 {
 	int pid;
+	const struct sched_param param = { .sched_priority = 1 };
 
 	rcu_scheduler_starting();
 	/*
@@ -372,6 +697,7 @@ static noinline void __init_refok rest_init(void)
 	rcu_read_lock();
 	kthreadd_task = find_task_by_pid_ns(pid, &init_pid_ns);
 	rcu_read_unlock();
+	sched_setscheduler_nocheck(kthreadd_task, SCHED_FIFO, &param);
 	complete(&kthreadd_done);
 
 	/*
@@ -660,15 +986,26 @@ static int __init_or_module do_one_initcall_debug(initcall_t fn)
 	ktime_t calltime, delta, rettime;
 	unsigned long long duration;
 	int ret;
-
-	printk(KERN_DEBUG "calling  %pF @ %i\n", fn, task_pid_nr(current));
+	
+	if (initcall_debug)
+		printk(KERN_DEBUG "calling  %pF @ %i\n", fn, task_pid_nr(current));
 	calltime = ktime_get();
 	ret = fn();
 	rettime = ktime_get();
 	delta = ktime_sub(rettime, calltime);
 	duration = (unsigned long long) ktime_to_ns(delta) >> 10;
-	printk(KERN_DEBUG "initcall %pF returned %d after %lld usecs\n", fn,
-		ret, duration);
+	if (initcall_debug)
+		printk(KERN_DEBUG "initcall %pF returned %d after %lld usecs\n", fn,
+			ret, duration);
+			
+#ifndef ASUS_SHIP_BUILD
+	if (initcall_debug==0)
+	{
+		if (duration > 100000)
+			printk(KERN_WARNING "[debuginit] initcall %pF returned %d after %lld usecs\n", fn,
+				ret, duration);
+	}
+#endif
 
 	return ret;
 }
@@ -678,10 +1015,14 @@ int __init_or_module do_one_initcall(initcall_t fn)
 	int count = preempt_count();
 	int ret;
 
+#ifndef ASUS_SHIP_BUILD
+	ret = do_one_initcall_debug(fn);
+#else
 	if (initcall_debug)
 		ret = do_one_initcall_debug(fn);
 	else
 		ret = fn();
+#endif		
 
 	msgbuf[0] = 0;
 

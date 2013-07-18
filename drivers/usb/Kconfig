@@ -53,6 +53,7 @@ config USB_ARCH_HAS_EHCI
 # some non-PCI HCDs implement xHCI
 config USB_ARCH_HAS_XHCI
 	boolean
+	default y if ARCH_MSM8974
 	default PCI
 
 menuconfig USB_SUPPORT
@@ -133,8 +134,6 @@ source "drivers/usb/host/Kconfig"
 
 source "drivers/usb/musb/Kconfig"
 
-source "drivers/usb/renesas_usbhs/Kconfig"
-
 source "drivers/usb/class/Kconfig"
 
 source "drivers/usb/storage/Kconfig"
@@ -182,5 +181,11 @@ source "drivers/usb/atm/Kconfig"
 source "drivers/usb/gadget/Kconfig"
 
 source "drivers/usb/otg/Kconfig"
+
+# ASUS_BSP+++ BennyCheng "add CONFIG_ASUS_USB_OTG for enable/disable phone mode otg support"
+config ASUS_USB_OTG
+	bool "ASUS USB OTG support"
+	default n
+# ASUS_BSP--- BennyCheng "add CONFIG_ASUS_USB_OTG for enable/disable phone mode otg support"
 
 endif # USB_SUPPORT

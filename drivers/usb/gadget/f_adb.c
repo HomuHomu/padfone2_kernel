@@ -42,12 +42,13 @@ struct adb_dev {
 	struct usb_ep *ep_in;
 	struct usb_ep *ep_out;
 
-	int online;
-	int error;
+	atomic_t online;
+	atomic_t error;
 
 	atomic_t read_excl;
 	atomic_t write_excl;
 	atomic_t open_excl;
+	struct delayed_work adb_release_w;
 
 	struct list_head tx_idle;
 
@@ -113,6 +114,25 @@ static struct usb_descriptor_header *hs_adb_descs[] = {
 
 static void adb_ready_callback(void);
 static void adb_closed_callback(void);
+
+//ASUS_BSP+++ "[USB][NA][Other] Add readable function name"
+static const char adb_string_interface[] = "ASUS Android Composite ADB Interface";
+enum {
+	ADB_STRING_INTERFACE
+};
+static struct usb_string adb_strings[] = {
+	{ADB_STRING_INTERFACE, adb_string_interface},
+	{}
+};
+static struct usb_gadget_strings adb_stringtab = {
+	.language = 0x0409, /* en-us */
+	.strings = adb_strings,
+};
+static struct usb_gadget_strings *adb_strings_array[] = {
+	&adb_stringtab,
+	NULL,
+};
+//ASUS_BSP--- "[USB][NA][Other] Add readable function name"
 
 /* temporary variable used between adb_open() and adb_gadget_bind() */
 static struct adb_dev *_adb_dev;
@@ -194,8 +214,10 @@ static void adb_complete_in(struct usb_ep *ep, struct usb_request *req)
 {
 	struct adb_dev *dev = _adb_dev;
 
-	if (req->status != 0)
-		dev->error = 1;
+	if (req->status != 0){
+		printk("adb_complete_in: req->status(%d)\n",req->status);
+		atomic_set(&dev->error, 1);
+	}
 
 	adb_req_put(dev, &dev->tx_idle, req);
 
@@ -207,8 +229,10 @@ static void adb_complete_out(struct usb_ep *ep, struct usb_request *req)
 	struct adb_dev *dev = _adb_dev;
 
 	dev->rx_done = 1;
-	if (req->status != 0 && req->status != -ECONNRESET)
-		dev->error = 1;
+	if (req->status != 0 && req->status != -ECONNRESET){
+		printk("adb_complete_out: req->status(%d)\n",req->status);
+		atomic_set(&dev->error, 1);
+	}
 
 	wake_up(&dev->read_wq);
 }
@@ -283,16 +307,17 @@ static ssize_t adb_read(struct file *fp, char __user *buf,
 		return -EBUSY;
 
 	/* we will block until we're online */
-	while (!(dev->online || dev->error)) {
+	while (!(atomic_read(&dev->online) || atomic_read(&dev->error))) {
 		pr_debug("adb_read: waiting for online state\n");
 		ret = wait_event_interruptible(dev->read_wq,
-				(dev->online || dev->error));
+			(atomic_read(&dev->online) ||
+			atomic_read(&dev->error)));
 		if (ret < 0) {
 			adb_unlock(&dev->read_excl);
 			return ret;
 		}
 	}
-	if (dev->error) {
+	if (atomic_read(&dev->error)) {
 		r = -EIO;
 		goto done;
 	}
@@ -306,7 +331,7 @@ requeue_req:
 	if (ret < 0) {
 		pr_debug("adb_read: failed to queue req %p (%d)\n", req, ret);
 		r = -EIO;
-		dev->error = 1;
+		atomic_set(&dev->error, 1);
 		goto done;
 	} else {
 		pr_debug("rx %p queue\n", req);
@@ -316,12 +341,12 @@ requeue_req:
 	ret = wait_event_interruptible(dev->read_wq, dev->rx_done);
 	if (ret < 0) {
 		if (ret != -ERESTARTSYS)
-			dev->error = 1;
+		atomic_set(&dev->error, 1);
 		r = ret;
 		usb_ep_dequeue(dev->ep_out, req);
 		goto done;
 	}
-	if (!dev->error) {
+	if (!atomic_read(&dev->error)) {
 		/* If we got a 0-len packet, throw it back and try again. */
 		if (req->actual == 0)
 			goto requeue_req;
@@ -356,7 +381,7 @@ static ssize_t adb_write(struct file *fp, const char __user *buf,
 		return -EBUSY;
 
 	while (count > 0) {
-		if (dev->error) {
+		if (atomic_read(&dev->error)) {
 			pr_debug("adb_write dev->error\n");
 			r = -EIO;
 			break;
@@ -365,7 +390,8 @@ static ssize_t adb_write(struct file *fp, const char __user *buf,
 		/* get an idle tx request to use */
 		req = 0;
 		ret = wait_event_interruptible(dev->write_wq,
-			(req = adb_req_get(dev, &dev->tx_idle)) || dev->error);
+			((req = adb_req_get(dev, &dev->tx_idle)) ||
+			 atomic_read(&dev->error)));
 
 		if (ret < 0) {
 			r = ret;
@@ -386,7 +412,7 @@ static ssize_t adb_write(struct file *fp, const char __user *buf,
 			ret = usb_ep_queue(dev->ep_in, req, GFP_ATOMIC);
 			if (ret < 0) {
 				pr_debug("adb_write: xfer error %d\n", ret);
-				dev->error = 1;
+				atomic_set(&dev->error, 1);
 				r = -EIO;
 				break;
 			}
@@ -407,6 +433,11 @@ static ssize_t adb_write(struct file *fp, const char __user *buf,
 	return r;
 }
 
+static void adb_release_work(struct work_struct *w)
+{
+	adb_closed_callback();
+}
+
 static int adb_open(struct inode *ip, struct file *fp)
 {
 	pr_info("adb_open\n");
@@ -419,9 +450,10 @@ static int adb_open(struct inode *ip, struct file *fp)
 	fp->private_data = _adb_dev;
 
 	/* clear the error latch */
-	_adb_dev->error = 0;
+	atomic_set(&_adb_dev->error, 0);
 
-	adb_ready_callback();
+	if (!cancel_delayed_work_sync(&_adb_dev->adb_release_w))
+		adb_ready_callback();
 
 	return 0;
 }
@@ -430,7 +462,16 @@ static int adb_release(struct inode *ip, struct file *fp)
 {
 	pr_info("adb_release\n");
 
-	adb_closed_callback();
+	/*
+	 * When USB cable is plugged out, adb reader is unblocked and
+	 * -EIO is returned to user space. adb daemon reopen the port
+	 * which would disable and enable USB configuration unnecessarily.
+	 *
+	 * Delay notifying the adb close event to android by 1 sec. If
+	 * ADB daemon opens the port with in 1 sec, USB configuration
+	 * re-enable does not happen.
+	 */
+	schedule_delayed_work(&_adb_dev->adb_release_w, msecs_to_jiffies(1000));
 
 	adb_unlock(&_adb_dev->open_excl);
 	return 0;
@@ -470,7 +511,13 @@ adb_function_bind(struct usb_configuration *c, struct usb_function *f)
 	if (id < 0)
 		return id;
 	adb_interface_desc.bInterfaceNumber = id;
-
+	//ASUS_BSP+++ "[USB][NA][Other] Add readable function name"
+	if (adb_strings[ADB_STRING_INTERFACE].id == 0) {
+		int rc = usb_string_id(c->cdev);
+		adb_strings[ADB_STRING_INTERFACE].id = rc;
+		adb_interface_desc.iInterface = rc;
+	}
+	//ASUS_BSP--- "[USB][NA][Other] Add readable function name"
 	/* allocate endpoints */
 	ret = adb_create_bulk_endpoints(dev, &adb_fullspeed_in_desc,
 			&adb_fullspeed_out_desc);
@@ -498,8 +545,8 @@ adb_function_unbind(struct usb_configuration *c, struct usb_function *f)
 	struct usb_request *req;
 
 
-	dev->online = 0;
-	dev->error = 1;
+	atomic_set(&dev->online, 0);
+	atomic_set(&dev->error, 1);
 
 	wake_up(&dev->read_wq);
 
@@ -518,23 +565,35 @@ static int adb_function_set_alt(struct usb_function *f,
 	DBG(cdev, "adb_function_set_alt intf: %d alt: %d\n", intf, alt);
 
 	ret = config_ep_by_speed(cdev->gadget, f, dev->ep_in);
-	if (ret)
+	if (ret) {
+		dev->ep_in->desc = NULL;
+		ERROR(cdev, "config_ep_by_speed failes for ep %s, result %d\n",
+				dev->ep_in->name, ret);
 		return ret;
-
+	}
 	ret = usb_ep_enable(dev->ep_in);
-	if (ret)
+	if (ret) {
+		ERROR(cdev, "failed to enable ep %s, result %d\n",
+			dev->ep_in->name, ret);
 		return ret;
+	}
 
 	ret = config_ep_by_speed(cdev->gadget, f, dev->ep_out);
-	if (ret)
-		return ret;
-
-	ret = usb_ep_enable(dev->ep_out);
 	if (ret) {
+		dev->ep_out->desc = NULL;
+		ERROR(cdev, "config_ep_by_speed failes for ep %s, result %d\n",
+			dev->ep_out->name, ret);
 		usb_ep_disable(dev->ep_in);
 		return ret;
 	}
-	dev->online = 1;
+	ret = usb_ep_enable(dev->ep_out);
+	if (ret) {
+		ERROR(cdev, "failed to enable ep %s, result %d\n",
+				dev->ep_out->name, ret);
+		usb_ep_disable(dev->ep_in);
+		return ret;
+	}
+	atomic_set(&dev->online, 1);
 
 	/* readers may be blocked waiting for us to go online */
 	wake_up(&dev->read_wq);
@@ -547,8 +606,8 @@ static void adb_function_disable(struct usb_function *f)
 	struct usb_composite_dev	*cdev = dev->cdev;
 
 	DBG(cdev, "adb_function_disable cdev %p\n", cdev);
-	dev->online = 0;
-	dev->error = 1;
+	atomic_set(&dev->online, 0);
+	atomic_set(&dev->error, 1);
 	usb_ep_disable(dev->ep_in);
 	usb_ep_disable(dev->ep_out);
 
@@ -572,6 +631,9 @@ static int adb_bind_config(struct usb_configuration *c)
 	dev->function.unbind = adb_function_unbind;
 	dev->function.set_alt = adb_function_set_alt;
 	dev->function.disable = adb_function_disable;
+	//ASUS_BSP+++ "[USB][NA][Other] Add readable function name"
+	dev->function.strings     = adb_strings_array;
+	//ASUS_BSP--- "[USB][NA][Other] Add readable function name"
 
 	return usb_add_function(c, &dev->function);
 }
@@ -594,6 +656,7 @@ static int adb_setup(void)
 	atomic_set(&dev->read_excl, 0);
 	atomic_set(&dev->write_excl, 0);
 
+	INIT_DELAYED_WORK(&dev->adb_release_w, adb_release_work);
 	INIT_LIST_HEAD(&dev->tx_idle);
 
 	_adb_dev = dev;

@@ -15,6 +15,11 @@
 #define CREATE_TRACE_POINTS
 #include <trace/events/gpio.h>
 
+#include <mach/gpiomux.h>       //Ledger
+enum {
+        MSM_GPIOMUX_DEBUG_GET = BIT(0),
+};
+
 /* Optional implementation infrastructure for GPIO interfaces.
  *
  * Platforms may want to use this if they tend to use very many GPIOs
@@ -1189,6 +1194,9 @@ int gpio_request(unsigned gpio, const char *label)
 	int			status = -EINVAL;
 	unsigned long		flags;
 
+        if (msm_gpiomux_debug_mask & MSM_GPIOMUX_DEBUG_GET)
+                printk("%s gpio%d %s\n",__func__,gpio,label); //Ledger
+
 	spin_lock_irqsave(&gpio_lock, flags);
 
 	if (!gpio_is_valid(gpio))
@@ -1241,6 +1249,9 @@ void gpio_free(unsigned gpio)
 	unsigned long		flags;
 	struct gpio_desc	*desc;
 	struct gpio_chip	*chip;
+
+        if (msm_gpiomux_debug_mask & MSM_GPIOMUX_DEBUG_GET)
+                printk("%s gpio%d \n",__func__,gpio); //Ledger
 
 	might_sleep();
 

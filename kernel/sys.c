@@ -85,6 +85,20 @@
 # define SET_TSC_CTL(a)		(-EINVAL)
 #endif
 
+//ASUS BSP Eason add A68 charge mode +++
+#include <linux/microp_api.h>
+#include <linux/microp.h>
+#include <linux/microp_pin_def.h>
+extern int getPowerBankCharge(void);
+extern int getBalanceCharge(void);
+extern void decideIfDo_PadBalanceModeInChgMode(void);
+extern bool pad_exist(void);
+extern int uP_nuvoton_write_reg(int cmd, void *data);
+//ASUS BSP Eason add A68 charge mode ---
+//ASUS_BSP Eason:when shutdown device set smb346 charger to DisOTG mode +++
+extern void UsbSetOtgSwitch(bool switchOtg);
+//ASUS_BSP Eason:when shutdown device set smb346 charger to DisOTG mode ---
+
 /*
  * this is where the system-wide overflow UID and GID are defined, for
  * architectures that now have 32-bit UID/GID but didn't in the past
@@ -405,10 +419,41 @@ EXPORT_SYMBOL_GPL(kernel_halt);
  */
 void kernel_power_off(void)
 {
+       unsigned short off=0xAA;
 	kernel_shutdown_prepare(SYSTEM_POWER_OFF);
 	if (pm_power_off_prepare)
 		pm_power_off_prepare();
 	disable_nonboot_cpus();
+
+	//ASUS_BSP Eason:when shutdown device set smb346 charger to DisOTG mode +++
+	printk("[BAT]shutdown DisOTG+++\n ");
+	UsbSetOtgSwitch(false);
+	printk("[BAT]shutdown DisOTG---\n ");
+	//ASUS_BSP Eason:when shutdown device set smb346 charger to DisOTG mode ---
+	//ASUS BSP Eason add A68 charge mode +++
+	decideIfDo_PadBalanceModeInChgMode();
+	if(AX_MicroP_IsP01Connected())
+	{
+	//ASUS BSP Eason: when shutdown force turn off Vbus +++
+		if(1 != AX_MicroP_get_USBDetectStatus(Batt_P01))
+		{
+	       // if (!getBalanceCharge() || !getPowerBankCharge()) 
+		 //{
+			
+			AX_MicroP_setGPIOOutputPin(OUT_uP_VBUS_EN, 0);
+		 //}
+		}
+	//ASUS BSP Eason: when shutdown force turn off Vbus ---	
+		//ASUS_BSP +++ Peter Lu "Trun off scaler"
+		printk("switch_backlight_and_panel off\n");
+		AX_MicroP_setGPIOOutputPin(OUT_uP_LCD_EN, 0);
+		//ASUS_BSP --- Peter Lu
+
+		uP_nuvoton_write_reg(MICROP_SOFTWARE_OFF,  &off);
+		printk("[ChgMode]:P03 power off\n");
+	}
+	//ASUS BSP Eason add A68 charge mode ---
+	
 	syscore_shutdown();
 	printk(KERN_EMERG "Power down.\n");
 	kmsg_dump(KMSG_DUMP_POWEROFF);

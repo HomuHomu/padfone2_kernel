@@ -22,6 +22,35 @@
 #include <linux/printk.h>
 #include <linux/dynamic_debug.h>
 #include <asm/byteorder.h>
+#include <linux/asusdebug.h>
+// +++ ASUS_BSP : miniporting : Add for A68 Proj
+enum DEVICE_HWID
+{
+	A68_EVB = 0x0,
+	A68_SR1_1 = 0x1,
+	A68_SR1_2 = 0x2,
+	A68_SR2 = 0x3,
+	A68_ER1 = 0x4,
+	A68_ER2 = 0x5,
+	A68_ER3 = 0x6,
+	A68_PR = 0x7,
+	A68_PR2 = 0x8,
+	A68_MP = 0x9,
+
+	A80_EVB = 0x10,
+	A80_SR1 = 0x11,
+	A80_SR2 = 0x12,
+	A80_SR3 = 0x13,
+	A80_ER1 = 0x14,
+	A80_ER2 = 0x15,
+	A80_ER3 = 0x16,
+	A80_PR = 0x17,
+	
+	A68_UNKNOWN = 0xFF
+};  
+
+extern enum DEVICE_HWID g_A68_hwID;
+// --- ASUS_BSP : miniporting : Add for A66 Proj
 
 #define USHRT_MAX	((u16)(~0U))
 #define SHRT_MAX	((s16)(USHRT_MAX>>1))
@@ -709,5 +738,8 @@ extern int do_sysinfo(struct sysinfo *info);
 extern char *mach_panic_string;
 
 #endif /* __KERNEL__ */
+
+/* To identify board information in panic logs, set this */
+extern char *mach_panic_string;
 
 #endif

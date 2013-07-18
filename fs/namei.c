@@ -2260,6 +2260,7 @@ static struct file *do_last(struct nameidata *nd, struct path *path,
 		umode_t mode = op->mode;
 		if (!IS_POSIXACL(dir->d_inode))
 			mode &= ~current_umask();
+
 		/*
 		 * This write is needed to ensure that a
 		 * rw->ro transition does not occur between
@@ -2664,7 +2665,9 @@ SYSCALL_DEFINE3(mkdirat, int, dfd, const char __user *, pathname, umode_t, mode)
 	error = security_path_mkdir(&path, dentry, mode);
 	if (error)
 		goto out_drop_write;
+
 	error = vfs_mkdir(path.dentry->d_inode, dentry, mode);
+
 out_drop_write:
 	mnt_drop_write(path.mnt);
 out_dput:

@@ -33,13 +33,9 @@
 #define PN544_MSG_MAX_SIZE	0x21 /* at normal HCI mode */
 
 /* ioctl */
-#define PN544_CHAR_BASE		'P'
-#define PN544_IOR(num, dtype)	_IOR(PN544_CHAR_BASE, num, dtype)
-#define PN544_IOW(num, dtype)	_IOW(PN544_CHAR_BASE, num, dtype)
-#define PN544_GET_FW_MODE	PN544_IOW(1, unsigned int)
-#define PN544_SET_FW_MODE	PN544_IOW(2, unsigned int)
-#define PN544_GET_DEBUG		PN544_IOW(3, unsigned int)
-#define PN544_SET_DEBUG		PN544_IOW(4, unsigned int)
+#define PN544_MAGIC	0xE9
+#define PN544_SET_PWR	_IOW(PN544_MAGIC, 0x01, unsigned int)
+#define PN544_GET_HardwareID	_IOW(PN544_MAGIC, 0x02, unsigned int)
 
 /* Timing restrictions (ms) */
 #define PN544_RESETVEN_TIME	30 /* 7 */
@@ -84,7 +80,9 @@ struct pn544_fw_packet {
 };
 
 #ifdef __KERNEL__
+
 /* board config */
+
 struct pn544_nfc_platform_data {
 	int (*request_resources) (struct i2c_client *client);
 	void (*free_resources) (void);
@@ -92,6 +90,13 @@ struct pn544_nfc_platform_data {
 	int (*test) (void);
 	void (*disable) (void);
 };
+
+struct pn544_i2c_platform_data {
+	unsigned int irq_gpio;
+	unsigned int ven_gpio;
+	unsigned int firm_gpio;
+ };
+
 #endif /* __KERNEL__ */
 
 #endif /* _PN544_H_ */

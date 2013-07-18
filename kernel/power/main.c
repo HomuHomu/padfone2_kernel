@@ -15,8 +15,11 @@
 #include <linux/workqueue.h>
 #include <linux/debugfs.h>
 #include <linux/seq_file.h>
+#include <linux/hrtimer.h>
 
 #include "power.h"
+
+#define MAX_BUF 100
 
 DEFINE_MUTEX(pm_mutex);
 
@@ -25,6 +28,13 @@ DEFINE_MUTEX(pm_mutex);
 /* Routines for PM-transition notifications */
 
 static BLOCKING_NOTIFIER_HEAD(pm_chain_head);
+
+static void touch_event_fn(struct work_struct *work);
+static DECLARE_WORK(touch_event_struct, touch_event_fn);
+
+static struct hrtimer tc_ev_timer;
+static int tc_ev_processed;
+static ktime_t touch_evt_timer_val;
 
 int register_pm_notifier(struct notifier_block *nb)
 {
@@ -70,6 +80,81 @@ static ssize_t pm_async_store(struct kobject *kobj, struct kobj_attribute *attr,
 }
 
 power_attr(pm_async);
+
+static ssize_t
+touch_event_show(struct kobject *kobj,
+		 struct kobj_attribute *attr, char *buf)
+{
+	if (tc_ev_processed == 0)
+		return snprintf(buf, strnlen("touch_event", MAX_BUF) + 1,
+				"touch_event");
+	else
+		return snprintf(buf, strnlen("null", MAX_BUF) + 1,
+				"null");
+}
+
+static ssize_t
+touch_event_store(struct kobject *kobj,
+		  struct kobj_attribute *attr,
+		  const char *buf, size_t n)
+{
+
+	hrtimer_cancel(&tc_ev_timer);
+	tc_ev_processed = 0;
+
+	/* set a timer to notify the userspace to stop processing
+	 * touch event
+	 */
+	hrtimer_start(&tc_ev_timer, touch_evt_timer_val, HRTIMER_MODE_REL);
+
+	/* wakeup the userspace poll */
+	sysfs_notify(kobj, NULL, "touch_event");
+
+	return n;
+}
+
+power_attr(touch_event);
+
+static ssize_t
+touch_event_timer_show(struct kobject *kobj,
+		 struct kobj_attribute *attr, char *buf)
+{
+	return snprintf(buf, MAX_BUF, "%lld", touch_evt_timer_val.tv64);
+}
+
+static ssize_t
+touch_event_timer_store(struct kobject *kobj,
+			struct kobj_attribute *attr,
+			const char *buf, size_t n)
+{
+	unsigned long val;
+
+	if (strict_strtoul(buf, 10, &val))
+		return -EINVAL;
+
+	touch_evt_timer_val = ktime_set(0, val*1000);
+
+	return n;
+}
+
+power_attr(touch_event_timer);
+
+static void touch_event_fn(struct work_struct *work)
+{
+	/* wakeup the userspace poll */
+	tc_ev_processed = 1;
+	sysfs_notify(power_kobj, NULL, "touch_event");
+
+	return;
+}
+
+static enum hrtimer_restart tc_ev_stop(struct hrtimer *hrtimer)
+{
+
+	schedule_work(&touch_event_struct);
+
+	return HRTIMER_NORESTART;
+}
 
 #ifdef CONFIG_PM_DEBUG
 int pm_test_level = TEST_NONE;
@@ -133,6 +218,108 @@ static ssize_t pm_test_store(struct kobject *kobj, struct kobj_attribute *attr,
 
 power_attr(pm_test);
 #endif /* CONFIG_PM_DEBUG */
+
+// ASUS_BSP+++ Peter_lu "Fast boot mode"
+#ifdef CONFIG_FASTBOOT
+#include <linux/fastboot.h>
+#include <linux/wakelock.h>
+
+const char const fastboot_states[]="fastboot";
+static bool gb_in_fastboot_mode= false;
+static bool gb_ready_to_wake_up= false;
+static struct wake_lock fastboot_wake_lock;
+bool is_fastboot_enable(void)
+{
+    return (gb_in_fastboot_mode);
+}
+void ready_to_wake_up_in_fastboot(void)
+{
+    static bool init_wake_lock = false;
+
+    if(false == init_wake_lock){
+
+        wake_lock_init(&fastboot_wake_lock, WAKE_LOCK_SUSPEND, "fastboot");    
+
+        init_wake_lock = true;
+    }
+
+    wake_lock_timeout(&fastboot_wake_lock, 5 * HZ);
+
+    printk("[FastBoot]Wake up from fastboot\n");
+    gb_ready_to_wake_up = true;
+}
+void ready_to_wake_up_and_send_power_key_press_event_in_fastboot(void)
+{
+    ready_to_wake_up_in_fastboot();
+
+    send_fake_power_key_event(true);
+
+    send_fake_power_key_event(false);
+}
+
+static ssize_t fastboot_wakeup_show(struct kobject *kobj, struct kobj_attribute *attr,
+				char *buf)
+{
+    	return sprintf(buf, "%d\n", gb_ready_to_wake_up);
+}
+
+static ssize_t fastboot_wakeup_store(struct kobject *kobj, struct kobj_attribute *attr,
+				const char *buf, size_t n)
+{
+	char *p;
+	int len;
+
+	p = memchr(buf, '\n', n);
+    
+	len = p ? p - buf : n;
+
+	return 0;
+}
+
+power_attr(fastboot_wakeup);
+
+
+static ssize_t fastboot_show(struct kobject *kobj, struct kobj_attribute *attr,
+				char *buf)
+{
+    	return sprintf(buf, "%d\n", gb_in_fastboot_mode);
+}
+
+static ssize_t fastboot_store(struct kobject *kobj, struct kobj_attribute *attr,
+				const char *buf, size_t n)
+{
+	char *p;
+	int len;
+	int error = -EINVAL;
+
+	p = memchr(buf, '\n', n);
+	len = p ? p - buf : n;
+
+	mutex_lock(&pm_mutex);
+
+       if(!strncmp(buf, "0", len)){
+
+            gb_in_fastboot_mode = false;
+            
+       }else{
+
+            gb_in_fastboot_mode = true;
+       }
+
+       gb_ready_to_wake_up = false;
+
+       error = 0;
+
+	mutex_unlock(&pm_mutex);
+
+	return error ? error : n;
+}
+
+power_attr(fastboot);
+
+
+#endif //#ifdef CONFIG_FASTBOOT
+// ASUS_BSP--- Peter_lu "Fast boot mode"	
 
 #ifdef CONFIG_DEBUG_FS
 static char *suspend_step_name(enum suspend_stat_step step)
@@ -273,7 +460,11 @@ static ssize_t state_store(struct kobject *kobj, struct kobj_attribute *attr,
 			   const char *buf, size_t n)
 {
 #ifdef CONFIG_SUSPEND
+#ifdef CONFIG_EARLYSUSPEND
+	suspend_state_t state = PM_SUSPEND_ON;
+#else
 	suspend_state_t state = PM_SUSPEND_STANDBY;
+#endif
 	const char * const *s;
 #endif
 	char *p;
@@ -292,8 +483,15 @@ static ssize_t state_store(struct kobject *kobj, struct kobj_attribute *attr,
 #ifdef CONFIG_SUSPEND
 	for (s = &pm_states[state]; state < PM_SUSPEND_MAX; s++, state++) {
 		if (*s && len == strlen(*s) && !strncmp(buf, *s, len)) {
+#ifdef CONFIG_EARLYSUSPEND
+			if (state == PM_SUSPEND_ON || valid_state(state)) {
+				error = 0;
+				request_suspend_state(state);
+				break;
+			}
+#else
 			error = pm_suspend(state);
-			break;
+#endif
 		}
 	}
 #endif
@@ -405,7 +603,7 @@ power_attr(wake_lock);
 power_attr(wake_unlock);
 #endif
 
-static struct attribute * g[] = {
+static struct attribute *g[] = {
 	&state_attr.attr,
 #ifdef CONFIG_PM_TRACE
 	&pm_trace_attr.attr,
@@ -414,12 +612,20 @@ static struct attribute * g[] = {
 #ifdef CONFIG_PM_SLEEP
 	&pm_async_attr.attr,
 	&wakeup_count_attr.attr,
+	&touch_event_attr.attr,
+	&touch_event_timer_attr.attr,
 #ifdef CONFIG_PM_DEBUG
 	&pm_test_attr.attr,
 #endif
 #ifdef CONFIG_USER_WAKELOCK
 	&wake_lock_attr.attr,
 	&wake_unlock_attr.attr,
+// ASUS_BSP+++ Peter_lu "Fast boot mode"
+#ifdef CONFIG_FASTBOOT
+       &fastboot_wakeup_attr.attr,
+       &fastboot_attr.attr,
+#endif //#ifdef CONFIG_FASTBOOT
+// ASUS_BSP--- Peter_lu "Fast boot mode"
 #endif
 #endif
 	NULL,
@@ -450,6 +656,13 @@ static int __init pm_init(void)
 		return error;
 	hibernate_image_size_init();
 	hibernate_reserved_size_init();
+
+	touch_evt_timer_val = ktime_set(2, 0);
+	hrtimer_init(&tc_ev_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
+	tc_ev_timer.function = &tc_ev_stop;
+	tc_ev_processed = 1;
+
+
 	power_kobj = kobject_create_and_add("power", NULL);
 	if (!power_kobj)
 		return -ENOMEM;
